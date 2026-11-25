@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner di sagome</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a6b5c">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root {
+  /* Layout: una colonna da banco di lavoro; passi numerati, foto e disegno a tutta larghezza, verdetto in evidenza. */
+  --bg: #eef0ec;
+  --panel: #ffffff;
+  --ink: #18211e;
+  --muted: #5d6a65;
+  --line: #cdd4ce;
+  --accent: #0a6b5c;
+  --accent-ink: #ffffff;
+  --ok: #1d7a3e;
+  --ok-bg: #e4f3e8;
+  --warn: #9a5200;
+  --warn-bg: #fbefdc;
+  --bad: #b3261e;
+  --font-display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121816; --panel: #1b2421; --ink: #e8eeea; --muted: #9aa8a2; --line: #33403b;
+    --accent: #4fc3ad; --accent-ink: #06231d; --ok: #6fd08d; --ok-bg: #173022; --warn: #f0b35a; --warn-bg: #352812; --bad: #ff8a80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121816; --panel: #1b2421; --ink: #e8eeea; --muted: #9aa8a2; --line: #33403b;
+  --accent: #4fc3ad; --accent-ink: #06231d; --ok: #6fd08d; --ok-bg: #173022; --warn: #f0b35a; --warn-bg: #352812; --bad: #ff8a80;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 400 16px/1.45 var(--font-body); }
+main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+h1 { font: 600 34px/1 var(--font-display); letter-spacing: .01em; margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+h2 { font: 600 22px/1.1 var(--font-display); margin: 0; display: flex; align-items: baseline; gap: 10px; }
+h2 .n { color: var(--accent); font-variant-numeric: tabular-nums; }
+p { margin: 0; }
+.hint { color: var(--muted); font-size: 15px; }
+.stage { position: relative; background: #2a2f2d; border-radius: 6px; overflow: hidden; }
+.stage canvas { display: block; width: 100%; height: auto; }
+#photo { touch-action: none; }
+.badge { position: absolute; left: 8px; top: 8px; background: #111c; color: #fff; font-size: 13px; padding: 3px 8px; border-radius: 4px; }
+#loupe { position: absolute; right: 8px; top: 8px; width: 132px; height: 132px; border: 2px solid #fff; border-radius: 50%; display: none; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button, .filebtn { font: 600 16px var(--font-body); border-radius: 8px; padding: 11px 16px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button.primary, .filebtn { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.link { border: 0; padding: 4px 0; background: none; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, .filebtn:focus-within, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.filebtn { position: relative; display: inline-block; }
+.filebtn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.status { font-weight: 500; }
+.status:empty { display: none; }
+.status.ok { color: var(--ok); } .status.warn { color: var(--warn); } .status.bad { color: var(--bad); }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.grid label, .field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+.grid input, .field input { font: 500 18px var(--font-body); font-variant-numeric: tabular-nums; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 100%; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { padding: 9px 12px; cursor: pointer; font-weight: 500; font-size: 15px; }
+.seg input { position: absolute; opacity: 0; }
+.seg input:checked + span { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.seg label:focus-within { outline: 3px solid var(--accent); outline-offset: -3px; }
+.ctl { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); flex: 1 1 200px; }
+.ctl input[type=range] { width: 100%; accent-color: var(--accent); }
+.verdict { border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); }
+.verdict.ok { background: var(--ok-bg); border-color: var(--ok); }
+.verdict.warn { background: var(--warn-bg); border-color: var(--warn); }
+.verdict .big { font: 600 28px/1.05 var(--font-display); }
+.verdict.ok .big { color: var(--ok); } .verdict.warn .big { color: var(--warn); }
+.verdict:empty { display: none; }
+.tape { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips:empty { display: none; }
+.chip { font: 500 15px var(--font-body); padding: 7px 11px 7px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); display: inline-flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
+.chip i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); font-weight: 600; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.field select { font: 500 16px var(--font-body); padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 100%; }
+.pred { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.field input::placeholder { color: var(--muted); opacity: .8; }
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; border-left-width: 5px; }
+.tile.ok { border-left-color: var(--ok); } .tile.warn { border-left-color: var(--warn); } .tile.bad { border-left-color: var(--bad); }
+.tile b { display: block; font: 600 22px/1.15 var(--font-display); font-variant-numeric: tabular-nums; }
+.tile span { font-size: 13.5px; color: var(--muted); }
+ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+[hidden] { display: none !important; }
+@media (max-width: 440px) { .grid, .tape { grid-template-columns: repeat(2, 1fr); } h1 { font-size: 30px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Scanner di sagome</h1>
+    <p>Dalla foto del cartone al DXF in scala reale, in millimetri.</p>
+  </header>
+
+  <section aria-labelledby="h-mk">
+    <h2 id="h-mk"><span class="n">1</span> Marker A3 stampati</h2>
+    <p class="hint">Da fare una volta sola, dopo la stampa. Misura il quadrato nero del foglio 1, tra le tacche. Lo spessore serve perché i fogli stanno a terra e la sagoma sul cartone.</p>
+    <div class="grid">
+      <label>Lato orizzontale, mm<input id="ra" inputmode="decimal" autocomplete="off" placeholder="240"></label>
+      <label>Lato verticale, mm<input id="rb" inputmode="decimal" autocomplete="off" placeholder="240"></label>
+      <label>Spessore cartone, mm<input id="th" inputmode="decimal" autocomplete="off" placeholder="5"></label>
+    </div>
+    <div class="row">
+      <span class="hint">Misurato con</span>
+      <div class="seg" role="radiogroup" aria-label="Strumento usato per misurare il marker">
+        <label><input type="radio" name="tool" id="t-r" value="0.3" checked><span>Righello</span></label>
+        <label><input type="radio" name="tool" id="t-c" value="0.05"><span>Calibro</span></label>
+      </div>
+    </div>
+    <p class="status" id="st-mk" role="status"></p>
+  </section>
+
+  <section aria-labelledby="h-foto">
+    <h2 id="h-foto"><span class="n">2</span> Foto</h2>
+    <p class="hint">Cartone ben piano, i 4 fogli attorno alla sagoma ad almeno 10 cm dal tratto. Fotografa dall'alto con la fotocamera principale, tutto dentro l'inquadratura.</p>
+    <div class="stage">
+      <canvas id="photo" width="900" height="675" aria-label="Foto con i marker riconosciuti"></canvas>
+      <span class="badge" id="badge">Esempio simulato</span>
+      <canvas id="loupe" width="264" height="264"></canvas>
+    </div>
+    <div class="row">
+      <label class="filebtn">Scegli o scatta la foto<input id="file" type="file" accept="image/*"></label>
+      <button id="manual" type="button">Segna le croci a mano</button>
+    </div>
+    <p class="status" id="st-photo" role="status">Carico l'esempio…</p>
+  </section>
+
+  <section aria-labelledby="h-sag">
+    <h2 id="h-sag"><span class="n">3</span> Sagoma</h2>
+    <div class="verdict" id="verdict" aria-live="polite"></div>
+    <div id="tapebox" hidden>
+      <div class="tape" id="tape"></div>
+      <div class="row" style="margin-top:10px"><button class="primary" id="recalc" type="button">Ricalcola con le misure</button></div>
+    </div>
+    <div class="stage"><canvas id="rect" width="900" height="620" aria-label="Sagoma raddrizzata con le linee trovate"></canvas></div>
+    <p class="hint">In rosso la luce, in blu tratteggiato il vetro. Nel DXF: layer LUCE e layer VETRO.</p>
+    <p class="hint" id="rect-hint">Tocca una linea per sceglierla o toglierla. Tocca dentro la sagoma se il rosso circonda la zona sbagliata.</p>
+    <div class="chips" id="chips" aria-label="Linee trovate"></div>
+    <div class="row">
+      <button class="primary" id="draw" type="button">Disegna col dito</button>
+      <button id="trace" type="button">Traccia a punti</button>
+      <button id="undo" type="button" hidden>Togli l'ultimo punto</button>
+      <button class="primary" id="done" type="button" hidden>Fine traccia</button>
+      <label class="check"><input type="checkbox" id="usecard" checked> Chiudi sul bordo del cartone</label>
+    </div>
+    <div class="row">
+      <div class="seg" role="radiogroup" aria-label="Quale bordo del tratto seguire">
+        <label><input type="radio" name="mode" id="m-in" value="in"><span>Interno</span></label>
+        <label><input type="radio" name="mode" id="m-mid" value="mid" checked><span>Mezzeria</span></label>
+        <label><input type="radio" name="mode" id="m-out" value="out"><span>Esterno</span></label>
+      </div>
+      <label class="field" style="flex:0 1 190px">Pulizia del contorno<select id="reg"><option value="arcs">Rette e archi</option><option value="lines">Solo rette</option><option value="off">Spenta (contorno come letto)</option></select></label>
+      <label class="ctl" id="tolbox">Spiana irregolarità fino a <b id="tolv">2</b> mm<input id="tol" type="range" min="0.5" max="5" step="0.5" value="2"></label>
+    </div>
+    <div class="row">
+      <label class="field" style="flex:0 1 150px">Sormonto vetro, mm<input id="ov" inputmode="decimal" autocomplete="off" value="15"></label>
+      <label class="ctl">Sensibilità alle linee deboli<input id="sens" type="range" min="1" max="9" value="7"></label>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="row">
+      <button class="primary" id="save" type="button" disabled>Scarica DXF (in uno zip)</button>
+      <button id="copy" type="button" disabled>Copia il DXF</button>
+    </div>
+    <p class="status" id="st-out" role="status"></p>
+  </section>
+
+  <section aria-labelledby="h-come">
+    <h2 id="h-come">Per restare entro 2 mm</h2>
+    <ol>
+      <li>Stampa i marker al 100% e misura il quadrato una volta sola. Col calibro la sola foto basta per sagome più grandi.</li>
+      <li>Metti i fogli a terra, piani e fuori dal cartone: un foglio appoggiato sul bordo del cartone è inclinato e falsa tutto.</li>
+      <li>Fotografa dall'alto con la fotocamera principale e carica la foto originale: quelle mandate in chat o via messaggi vengono compresse e la matita sparisce.</li>
+      <li>Matita o tratto debole: se la linea giusta non compare tra quelle trovate, premi "Disegna col dito" e ripassa la sagoma a grandi linee: l'app aggancia la linea vera vicino al tuo tratto.</li>
+      <li>Se manca un lato, lascia attivo "Chiudi sul bordo del cartone": il contorno segue il bordo del cartone.</li>
+      <li>Prima di tagliare, controlla in AutoCAD una quota che conosci.</li>
+    </ol>
+  </section>
+</main>
+
+<script src="cv.js"></script>
+<script src="aruco.js"></script>
+<script>window.OFFLINE = true;</script>
+<script src="core.js"></script>
+<script src="lines.js"></script>
+<script src="shape.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var C = window.Core;
+  var LIMIT = 2.0, TRACE = 0.5;               // tolleranza richiesta, quota riservata alla lettura del tratto
+  var EX = { a: 241.7, b: 241.1, tool: '0.3', th: 0 };   // misure del marker nella foto d'esempio
+  var ALL = [[1, 2], [2, 3], [3, 4], [4, 1], [1, 3], [2, 4]];
+  var S = { example: true, manual: false, pts: [], quads: [], grab: -1, mode: 'mid', sel: [], need: [], tape: {} };
+  var full = document.createElement('canvas'), photo = $('photo'), pctx = photo.getContext('2d');
+  window.__sagome = S;
+  function nf(v, d) { return v.toLocaleString('it-IT', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }); }
+  function status(id, txt, cls) { var e = $(id); e.textContent = txt; e.className = 'status ' + (cls || ''); }
+  function later(fn) { setTimeout(fn, 30); }
+  function key(p) { return Math.min(p[0], p[1]) + '-' + Math.max(p[0], p[1]); }
+  function num(v) { var x = parseFloat(String(v).replace(',', '.')); return isFinite(x) && x > 0 ? x : 0; }
+
+  // ---------- marker stampati ----------
+  function store(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function load(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+  function fillRuler() {
+    var r = S.example ? EX : (load('sagome-marker') || {});
+    $('ra').value = r.a ? nf(r.a, 1) : ''; $('rb').value = r.b ? nf(r.b, 1) : '';
+    $(r.tool === '0.05' ? 't-c' : 't-r').checked = true;
+    $('th').value = r.th != null ? nf(r.th, 1) : '';
+    rulerStatus();
+  }
+  function ruler() {
+    var a = num($('ra').value), b = num($('rb').value), tool = $('t-c').checked ? 0.05 : 0.3;
+    if (a && !b) b = a; if (b && !a) a = b;
+    var ok = a > 200 && a < 280 && b > 200 && b < 280;
+    return ok ? { a: a, b: b, sigma: tool, measured: true } : { a: 240, b: 240, sigma: 1.2, measured: false };
+  }
+  function rulerStatus() {
+    var r = ruler();
+    if (S.example) status('st-mk', 'Valori della foto d\'esempio. Con la tua prima foto inserisci i tuoi.', '');
+    else if (r.measured) status('st-mk', 'Memorizzato su questo telefono.', 'ok');
+    else status('st-mk', 'Senza queste misure uso 240 mm nominali e l\'app ti chiederà il metro molto più spesso.', 'warn');
+  }
+  function onRuler() {
+    if (!S.example) { var r = ruler(); store('sagome-marker', { a: r.measured ? r.a : 0, b: r.measured ? r.b : 0, tool: String(r.sigma), th: thickness() }); }
+    rulerStatus(); if (S.R) compute();
+  }
+  ['ra', 'rb'].forEach(function (id) { $(id).addEventListener('change', onRuler); });
+  ['t-r', 't-c'].forEach(function (id) { $(id).addEventListener('change', onRuler); });
+
+  // ---------- foto ----------
+  function loadImage(src, example) {
+    var im = new Image();
+    im.onload = function () {
+      var k = Math.min(1, 4096 / Math.max(im.naturalWidth, im.naturalHeight));
+      full.width = Math.round(im.naturalWidth * k); full.height = Math.round(im.naturalHeight * k);
+      var fx = full.getContext('2d', { willReadFrequently: true });
+      fx.drawImage(im, 0, 0, full.width, full.height);
+      S.iw = full.width; S.ih = full.height; S.rgba = fx.getImageData(0, 0, S.iw, S.ih).data;
+      S.example = example; S.manual = false; S.pts = []; S.quads = []; S.R = null; S.need = []; S.tape = {};
+      $('badge').hidden = !example;
+      var dk = Math.min(1, 1400 / S.iw);
+      photo.width = Math.round(S.iw * dk); photo.height = Math.round(S.ih * dk);
+      fillRuler(); clearResult();
+      drawPhoto(); status('st-photo', 'Cerco i marker…');
+      later(function () { detect(); if (!S.manual) compute(); });
+    };
+    im.onerror = function () { status('st-photo', 'Non riesco ad aprire questa immagine. Prova con un JPG o PNG.', 'bad'); };
+    im.src = src;
+  }
+  function detect() {
+    var found = [];
+    try {
+      var det = new AR.Detector({ dictionaryName: 'ARUCO_MIP_36h12' });
+      var ms = det.detect({ width: S.iw, height: S.ih, data: S.rgba });
+      for (var id = 0; id < 4; id++) {
+        var best = null, bp = 0;
+        ms.forEach(function (m) {
+          if (m.id !== id) return;
+          var p = C.dist(m.corners[0], m.corners[1]) + C.dist(m.corners[1], m.corners[2]);
+          if (p > bp) { bp = p; best = m; }
+        });
+        if (best) found[id] = C.refineQuad(det.grey.data, S.iw, S.ih, best.corners);
+      }
+    } catch (e) { found = []; }
+    var n = [0, 1, 2, 3].filter(function (i) { return found[i]; });
+    S.quads = found;
+    if (n.length >= 3) {
+      S.manual = false;
+      status('st-photo', n.length === 4 ? 'Trovati i 4 marker.' : 'Trovati 3 marker su 4 (' + n.map(function (i) { return i + 1; }).join(', ') + '): bastano, ma con 4 è più preciso.', n.length === 4 ? 'ok' : 'warn');
+    } else {
+      startManual((n.length ? 'Trovati solo i marker ' + n.map(function (i) { return i + 1; }).join(', ') + '. ' : 'Nessun marker trovato. ') + 'Tocca sulla foto le 4 croci nell\'ordine 1, 2, 3, 4; poi trascina per rifinire.');
+    }
+    drawPhoto();
+  }
+  function startManual(msg) {
+    S.manual = true; S.pts = []; S.quads = []; S.R = null; clearResult();
+    status('st-photo', msg, 'warn');
+    S.need = ALL.slice(); renderTape(); $('tapebox').hidden = false;
+    setVerdict('warn', 'Segna le croci e inserisci le misure', 'Senza marker riconosciuti servono tutte e 6 le distanze da croce a croce. La 2–4 serve da controllo.');
+    drawPhoto();
+  }
+  function drawPhoto() {
+    var k = photo.width / S.iw;
+    pctx.drawImage(full, 0, 0, photo.width, photo.height);
+    pctx.lineWidth = Math.max(2, photo.width / 350); pctx.strokeStyle = '#00e0a0';
+    var r = Math.max(14, photo.width / 45);
+    function label(t, x, y) {
+      pctx.font = '600 ' + Math.round(r * 2) + 'px Barlow, Arial'; pctx.lineWidth = Math.max(3, r / 4); pctx.strokeStyle = '#000'; pctx.fillStyle = '#fff';
+      pctx.strokeText(t, x, y); pctx.fillText(t, x, y); pctx.lineWidth = Math.max(2, photo.width / 350);
+    }
+    S.quads.forEach(function (q, i) {
+      if (!q) return;
+      pctx.strokeStyle = '#00e0a0'; pctx.beginPath();
+      q.forEach(function (p, j) { pctx[j ? 'lineTo' : 'moveTo'](p.x * k, p.y * k); }); pctx.closePath(); pctx.stroke();
+      var c = C.quadCenter(q); label(i + 1, c.x * k + r, c.y * k - r);
+    });
+    S.pts.forEach(function (p, i) {
+      var x = p.x * k, y = p.y * k;
+      pctx.strokeStyle = '#ff3b30'; pctx.beginPath();
+      pctx.moveTo(x - r, y); pctx.lineTo(x + r, y); pctx.moveTo(x, y - r); pctx.lineTo(x, y + r); pctx.stroke();
+      label(i + 1, x + r * 0.6, y - r * 0.6);
+    });
+  }
+  function drawLoupe(p) {
+    var lp = $('loupe'), lx = lp.getContext('2d'), z = 4, s = lp.width / z;
+    lp.style.display = 'block'; lx.imageSmoothingEnabled = false;
+    lx.fillStyle = '#000'; lx.fillRect(0, 0, lp.width, lp.height);
+    lx.drawImage(full, p.x - s / 2, p.y - s / 2, s, s, 0, 0, lp.width, lp.height);
+    lx.strokeStyle = '#ff3b30'; lx.lineWidth = 2; lx.beginPath();
+    lx.moveTo(lp.width / 2, 0); lx.lineTo(lp.width / 2, lp.height); lx.moveTo(0, lp.height / 2); lx.lineTo(lp.width, lp.height / 2); lx.stroke();
+  }
+  function evPt(e) { var b = photo.getBoundingClientRect(); return { x: (e.clientX - b.left) * S.iw / b.width, y: (e.clientY - b.top) * S.ih / b.height, k: S.iw / b.width }; }
+  photo.addEventListener('pointerdown', function (e) {
+    if (!S.manual || !S.rgba) return;
+    var p = evPt(e), near = -1, nd = 34 * p.k;
+    S.pts.forEach(function (q, i) { var d = C.dist(p, q); if (d < nd) { nd = d; near = i; } });
+    if (near < 0 && S.pts.length < 4) { S.pts.push({ x: p.x, y: p.y }); near = S.pts.length - 1; }
+    if (near < 0) return;
+    S.grab = near; S.last = p; photo.setPointerCapture(e.pointerId); e.preventDefault();
+    drawPhoto(); drawLoupe(S.pts[near]);
+  });
+  photo.addEventListener('pointermove', function (e) {
+    if (S.grab < 0) return;
+    var p = evPt(e), q = S.pts[S.grab];
+    q.x += (p.x - S.last.x) * 0.3; q.y += (p.y - S.last.y) * 0.3; S.last = p; // movimento rallentato: più preciso del dito
+    drawPhoto(); drawLoupe(q);
+  });
+  function drop() {
+    if (S.grab < 0) return;
+    S.grab = -1; $('loupe').style.display = 'none';
+    status('st-photo', S.pts.length < 4 ? 'Croce ' + S.pts.length + ' di 4 segnata.' : 'Segnate le 4 croci. Trascina vicino a una croce per rifinirla.', S.pts.length < 4 ? 'warn' : 'ok');
+  }
+  photo.addEventListener('pointerup', drop); photo.addEventListener('pointercancel', drop);
+  $('manual').addEventListener('click', function () {
+    if (S.rgba) startManual('Tocca sulla foto le 4 croci nell\'ordine 1, 2, 3, 4; poi trascina per rifinire.');
+  });
+  $('file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (f) loadImage(URL.createObjectURL(f), false);
+  });
+
+  // ---------- misure col metro ----------
+  function renderTape() {
+    var have = Object.keys(S.tape).filter(function (k) { return S.tape[k] > 0; });
+    var list = S.need.map(key);
+    have.forEach(function (k) { if (list.indexOf(k) < 0) list.push(k); });
+    list.sort(function (x, y) { return ALL.map(key).indexOf(x) - ALL.map(key).indexOf(y); });
+    $('tape').innerHTML = list.map(function (k) {
+      var lbl = k.replace('-', ' – ') + (S.manual && k === '2-4' ? ' controllo' : ''), ph = '', hint = '';
+      var ij = k.split('-').map(Number);
+      if (!S.manual && S.sol0 && S.sol0.centers[ij[0]] && S.sol0.centers[ij[1]]) {
+        // misura che il programma ricava dalla foto, con il suo intervallo (95%)
+        var pr = S.sol0.predict(ij[0], ij[1]), lo = Math.floor(pr.d - 2 * pr.sd), hi = Math.ceil(pr.d + 2 * pr.sd);
+        ph = ' placeholder="≈ ' + nf(pr.d, 0) + '"';
+        hint = '<small class="pred">Dalla foto: ' + nf(lo, 0) + '–' + nf(hi, 0) + ' mm</small>';
+      }
+      return '<label class="field">' + lbl + ', mm<input data-k="' + k + '" inputmode="decimal" autocomplete="off"' + ph + ' value="' + (S.tape[k] ? S.tape[k] : '') + '">' + hint + '</label>';
+    }).join('');
+    Array.prototype.forEach.call($('tape').querySelectorAll('input'), function (inp) {
+      inp.addEventListener('input', function () { S.tape[inp.dataset.k] = num(inp.value); });
+    });
+  }
+  function tapeList() {
+    return Object.keys(S.tape).filter(function (k) { return S.tape[k] > 0; }).map(function (k) {
+      var p = k.split('-').map(Number); return { i: p[0], j: p[1], d: S.tape[k] };
+    });
+  }
+  $('recalc').addEventListener('click', compute);
+
+  // ---------- calcolo ----------
+  function clearResult() {
+    S.R = null; S.out = null; S.dr = null; S.sol = null;
+    $('verdict').innerHTML = ''; $('verdict').className = 'verdict'; $('tiles').innerHTML = ''; $('tapebox').hidden = true;
+    $('save').disabled = $('copy').disabled = true;
+    var cv = $('rect'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+    status('st-out', '');
+  }
+  function setVerdict(cls, big, small) {
+    var v = $('verdict'); v.className = 'verdict ' + cls;
+    v.innerHTML = '<div class="big"></div><p></p>';
+    v.firstChild.textContent = big; v.lastChild.textContent = small;
+  }
+  var PAL = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#0aa5b8', '#d61fbd', '#8a9a00', '#c08000', '#2f6f4f', '#8b0000', '#000080', '#b05a7a', '#6a5acd', '#20b2aa', '#a0522d'];
+  var Lx = window.Lines;
+  function sensK() { return 11 - (+$('sens').value); }
+  function compute() {
+    if (S.manual) return computeManual();
+    var markers = [];
+    S.quads.forEach(function (q, i) { if (q) markers.push({ id: i + 1, img: q }); });
+    if (markers.length < 3) return;
+    var r = ruler(), base = { markers: markers, iw: S.iw, ih: S.ih, a: r.a, b: r.b, sigmaRuler: r.sigma, sigmaTape: 0.8 };
+    setVerdict('', 'Elaboro…', 'Su telefono può richiedere 10–20 secondi.');
+    later(function () {
+      var sol0 = C.solveMarkers(base); S.sol0 = sol0.error ? null : sol0;
+      if (sol0.error) { setVerdict('warn', 'Marker non leggibili', sol0.error); return; }
+      var dl = tapeList(), sol = sol0, bad = [];
+      dl.forEach(function (d) {
+        if (!sol0.centers[d.i] || !sol0.centers[d.j]) return;
+        var pr = sol0.predict(d.i, d.j), z = (d.d - pr.d) / Math.sqrt(pr.sd * pr.sd + 0.8 * 0.8);
+        if (Math.abs(z) > 3.5) bad.push(d.i + '–' + d.j + ' (dalla foto circa ' + nf(pr.d, 0) + ')');
+      });
+      if (dl.length) sol = C.solveMarkers(Object.assign({}, base, { dists: dl }));
+      var world = Object.keys(sol.centers).map(function (k) { return sol.centers[k]; });
+      var R = Lx.prepare({ rgba: S.rgba, iw: S.iw, ih: S.ih, Hwi: sol.Hwi, lens: sol.lens, world: world, erasePolys: C.sheetPolys(sol) });
+      if (R.error) { setVerdict('warn', 'Calcolo non riuscito', R.error); return; }
+      S.sol = sol; S.bad = bad; S.refs = world; S.sheets = C.sheetPolys(sol);
+      analyse(R);
+    });
+  }
+  function computeManual() {
+    if (S.pts.length < 4) { setVerdict('warn', 'Mancano le croci', 'Tocca sulla foto le 4 croci nell\'ordine 1, 2, 3, 4.'); return; }
+    var d = {}, miss = false;
+    ALL.forEach(function (p) { var v = S.tape[key(p)] || 0; d['d' + p[0] + p[1]] = v; if (!v && key(p) !== '2-4') miss = true; });
+    if (miss) { setVerdict('warn', 'Mancano delle misure', 'Inserisci almeno 1–2, 2–3, 3–4, 4–1 e 1–3. La 2–4 serve da controllo.'); return; }
+    var q = C.quadFromDistances(d, S.pts);
+    if (q.error) { setVerdict('warn', 'Misure incoerenti', q.error); return; }
+    setVerdict('', 'Elaboro…', 'Su telefono può richiedere 10–20 secondi.');
+    later(function () {
+      var R = Lx.prepare({ rgba: S.rgba, iw: S.iw, ih: S.ih, imgPts: S.pts, world: q.pts });
+      if (R.error) { setVerdict('warn', 'Calcolo non riuscito', R.error); return; }
+      S.sol = null; S.q = q; S.d = d; S.refs = q.pts; S.sheets = [];
+      analyse(R);
+    });
+  }
+  // dopo la rettifica: bordo del cartone, linee candidate, scelta iniziale
+  function analyse(R) {
+    var card = Lx.findCard(R);
+    if (card) { var cr = Lx.crop(R, card, 40); R = cr.R; card = cr.card; }
+    S.R = R; S.card = card; S.traced = []; S.tracing = null; S.tapPx = null; S.drawing = null;
+    $('trace').hidden = false; $('undo').hidden = true; $('done').hidden = true; setDraw(false);
+    $('usecard').disabled = !S.card; if (!S.card) $('usecard').checked = false; else $('usecard').checked = true;
+    S.cam = Lx.camera(R.Hwi, S.iw, S.ih);
+    S.stroke = closedStroke(R);
+    findLines(true);
+  }
+  function findLines(pick) {
+    S.lines = Lx.findLines(S.R, sensK(), S.card);
+    S.lines.forEach(function (l, k) { l.color = PAL[k % PAL.length]; });
+    S.lines.forEach(function (l) { if (S.stroke) l.color = PAL[(l.id) % PAL.length]; });
+    if (pick && S.stroke) S.sel = [50];
+    else if (pick) {
+      S.sel = Lx.autoSelect(S.lines, S.R.mmpp);
+    } else S.sel = S.sel.filter(function (id) { return id >= 50 || S.lines.some(function (l) { return l.id === id; }); });
+    rebuild();
+  }
+  // tratto scuro già chiuso (pennarello): metodo diretto, il più preciso
+  function closedStroke(R) {
+    try {
+      var g = new Uint8Array(R.W * R.H);
+      for (var i = 0; i < g.length; i++) g[i] = Math.max(0, Math.min(255, R.v[i]));
+      if (S.card) { // solo dentro il cartone, lontano dal suo bordo
+        var din = C.edt(S.card.mask, R.W, R.H), m8 = 8 / R.mmpp, bg = 0, nb = 0;
+        for (i = 0; i < g.length; i += 7) if (S.card.mask[i]) { bg += g[i]; nb++; }
+        bg = nb ? bg / nb : 200;
+        for (i = 0; i < g.length; i++) if (!S.card.mask[i] || din[i] < m8) g[i] = bg;
+      }
+      var Rg = { W: R.W, H: R.H, x0: R.x0, y0: R.y0, mmpp: R.mmpp, g: g, erase: [], erasePolys: S.sheets || [] };
+      C.segment(Rg, 0.22);
+      if (!Rg.best) return null;
+      var o = C.outline(Rg, [Rg.best], 'mid', 0.3);
+      if (o.error) return null;
+      var area = Math.abs(C.area(o.world)) / 1e6;
+      if (area < 0.03) return null;                 // troppo piccolo: probabilmente una scritta
+      return { id: 50, Rg: Rg, closed: true, lenMm: C.perimeter(o.world), pts: o.raw.map(function (p) { return Lx.toPx(R, p); }), wPx: o.strokeMm / R.mmpp, color: '#e6194b', stroke: true };
+    } catch (e) { return null; }
+  }
+  function allLines() { return (S.stroke ? [S.stroke] : []).concat(S.lines, S.traced); }
+  function rebuild() {
+    var R = S.R; S.out = null; S.dr = null; S.ext = [];
+    renderChips();
+    if (!S.sel.length) {
+      status('st-out', S.lines.length ? 'Scegli una o più linee che formano la sagoma, oppure usa "Traccia a mano".' : 'Non trovo linee: alza la sensibilità oppure usa "Traccia a mano".', 'warn');
+    } else {
+      var rg;
+      if (S.sel.indexOf(50) >= 0 && S.stroke) {
+        var o = C.outline(S.stroke.Rg, [S.stroke.Rg.best], S.mode, 0.3);
+        rg = o.error ? { error: o.error } : { mm: o.raw, strokeMm: o.strokeMm, gapMm: o.gapMm, ext: [] };
+      } else rg = Lx.region(R, { lines: allLines(), sel: S.sel, card: S.card, useCard: $('usecard').checked, tap: S.tapPx, mode: S.mode });
+      if (rg.error) status('st-out', rg.error, 'bad');
+      else {
+        var corr = Lx.liftCorrect(rg.mm, S.cam, thickness());
+        var simp = C.sharpen(C.simplifyClosed(corr, 0.3), Math.max(rg.strokeMm, 1));
+        S.glass = overlap() > 0 ? C.offsetPoly(simp.map(function (p) { return { x: p.x, y: -p.y }; }), overlap()).map(function (p) { return { x: p.x, y: -p.y }; }) : null;
+        S.shape = null; S.gshape = null; S.corrDense = corr;
+        S.out = { world: simp, raw: rg.mm, strokeMm: rg.strokeMm };
+        S.ext = rg.ext || [];
+        S.dr = C.toDrawing(simp, Lx.liftCorrect(S.refs, S.cam, 0));
+        var mode = $('reg').value;
+        if (mode !== 'off') {
+          // pulizia: rette (e archi) al posto delle irregolarità del cartone
+          var sh = window.Shape.regularize(corr.map(S.dr.tf), tolMm(), mode === 'arcs');
+          if (sh && sh.length >= 3) {
+            S.shape = sh; S.gshape = overlap() > 0 ? window.Shape.offset(sh, overlap()) : null;
+            var back = function (P) { return window.Shape.sample(P, 3).map(S.dr.inv); };
+            S.out.world = back(sh); S.glass = S.gshape ? back(S.gshape) : null;
+          }
+        }
+        status('st-out', rg.gapMm ? 'Ho chiuso piccole interruzioni delle linee (fino a ' + nf(rg.gapMm * 2, 0) + ' mm).' : '');
+      }
+    }
+    $('save').disabled = $('copy').disabled = !S.out;
+    drawRect(); verdict(); tiles();
+  }
+  function thickness() { var t = parseFloat(String($('th').value || '5').replace(',', '.')); return isFinite(t) && t >= 0 && t < 50 ? t : 5; }
+  function renderChips() {
+    var h = '';
+    var drawnOn = S.traced.some(function (l) { return l.drawn && S.sel.indexOf(l.id) >= 0; });
+    allLines().forEach(function (l) {
+      var on = S.sel.indexOf(l.id) >= 0;
+      if (drawnOn && !on) return;   // con la sagoma disegnata mostro solo quella
+      h += '<button type="button" class="chip" data-id="' + l.id + '" aria-pressed="' + on + '"><i style="background:' + l.color + '"></i>' +
+        (l.stroke ? 'Tratto chiuso' : l.drawn ? 'Disegnata' : l.traced ? 'Tracciata' : 'Linea ' + l.id) + ' · ' + nf(l.lenMm, 0) + ' mm</button>';
+    });
+    $('chips').innerHTML = h;
+    Array.prototype.forEach.call($('chips').querySelectorAll('.chip'), function (b) {
+      b.addEventListener('click', function () { toggleLine(+b.dataset.id); });
+    });
+  }
+  function toggleLine(id) {
+    var k = S.sel.indexOf(id);
+    if (k >= 0) S.sel.splice(k, 1);
+    else if (id === 50) S.sel = [50];
+    else { S.sel = S.sel.filter(function (x) { return x !== 50; }); S.sel.push(id); }
+    S.tapPx = null; rebuild();
+  }
+  function verdict() {
+    if (S.manual) {
+      $('tapebox').hidden = false;
+      if (!S.out) return;
+      var e = S.d.d24 ? Math.abs(S.q.d24 - S.d.d24) : null;
+      if (e == null) setVerdict('warn', 'Senza controllo', 'Inserisci anche la 2–4: è l\'unico modo per verificare le altre misure.');
+      else if (e <= 2) setVerdict('ok', 'Misure coerenti', 'La diagonale 2–4 torna entro ' + nf(e, 1) + ' mm.');
+      else setVerdict('warn', 'Ricontrolla le misure', 'La diagonale 2–4 calcolata differisce di ' + nf(e, 1) + ' mm da quella misurata.');
+      return;
+    }
+    if (!S.out) { setVerdict('warn', 'Sagoma non ancora chiusa', 'Scegli le linee giuste qui sotto: il verdetto arriva quando il contorno rosso è chiuso.'); return; }
+    var sol = S.sol, raw = S.out.raw, step = Math.max(1, Math.ceil(raw.length / 150));
+    var pts = raw.filter(function (_, i) { return i % step === 0; }).map(sol.toImage);
+    // spessore del cartone: incertezza su spessore (±1,5 mm) e altezza della fotocamera (±30%)
+    var h = thickness(), Z = S.cam && S.cam.Z > 100 ? S.cam.Z : 1500, cx = 0, cy = 0;
+    raw.forEach(function (p) { cx += p.x; cy += p.y; }); cx /= raw.length; cy /= raw.length;
+    var rmax = 0; raw.forEach(function (p) { rmax = Math.max(rmax, Math.hypot(p.x - cx, p.y - cy)); });
+    var eh = 2 * rmax * Math.hypot(1.5 / Z, 0.3 * h / Z);
+    function total(g) { return Math.sqrt(g * g + eh * eh); }
+    var geom = total(sol.tolerance(pts)), tot = geom + TRACE, have = tapeList().length;
+    if (S.bad && S.bad.length) {
+      $('tapebox').hidden = false; renderTape();
+      setVerdict('warn', 'Una misura non torna', 'Ricontrolla ' + S.bad.join(', ') + '. Se è giusta, il cartone o un foglio non sono piani.');
+      return;
+    }
+    if (tot <= LIMIT) {
+      $('tapebox').hidden = !have;
+      setVerdict('ok', have ? 'Entro i 2 mm con le misure' : 'Basta la foto', 'Errore massimo stimato ±' + nf(tot, 1) + ' mm (geometria ±' + nf(geom, 1) + ', lettura del tratto ±' + nf(TRACE, 1) + ').');
+      return;
+    }
+    var limG = Math.sqrt(Math.max(0.01, Math.pow(LIMIT - TRACE, 2) - eh * eh));
+    var sg = sol.suggest(pts, limG);
+    S.need = sg.pairs.concat(tapeList().map(function (d) { return [d.i, d.j]; }));
+    $('tapebox').hidden = false; renderTape();
+    if (sg.pairs.length) {
+      var lst = sg.pairs.map(function (p) { return p[0] + '–' + p[1]; }), after = total(sg.tol) + TRACE;
+      setVerdict('warn', 'Serve il metro: ' + (lst.length > 1 ? lst.slice(0, -1).join(', ') + ' e ' + lst[lst.length - 1] : lst[0]),
+        'Con ' + (have ? 'le misure attuali' : 'la sola foto') + ' l\'errore stimato è ±' + nf(tot, 1) + ' mm. Misura da croce a croce ' +
+        (lst.length > 1 ? 'queste distanze (sotto ogni campo c\'è la misura letta dalla foto, per controllo)' : 'questa distanza (sotto il campo c\'è la misura letta dalla foto, per controllo)') + ' e scendi a circa ±' + nf(after, 1) + ' mm.' +
+        (after > LIMIT ? ' Per stare sotto i 2 mm fai anche la foto più da vicino.' : ''));
+    } else {
+      setVerdict('warn', 'Oltre i 2 mm anche col metro', 'Errore stimato ±' + nf(tot, 1) + ' mm. Fotografa più da vicino o più dall\'alto, oppure dividi la sagoma in due foto.');
+    }
+  }
+  function drawRect() {
+    var R = S.R, cv = $('rect'), cx = cv.getContext('2d');
+    cv.width = R.W; cv.height = R.H;
+    var im = cx.createImageData(R.W, R.H), px = im.data;
+    for (var i = 0, n = R.W * R.H; i < n; i++) {
+      var g = R.g[i], j = i * 4; g = 70 + g * 0.72;
+      px[j] = px[j + 1] = px[j + 2] = g; px[j + 3] = 255;
+    }
+    cx.putImageData(im, 0, 0);
+    var lw = Math.max(2, R.W / 420);
+    cx.lineJoin = 'round'; cx.lineCap = 'round';
+    if (S.card) {
+      cx.setLineDash([lw * 4, lw * 3]); cx.strokeStyle = '#1aa3c7'; cx.lineWidth = lw;
+      poly(cx, S.card.hull, true); cx.setLineDash([]);
+    }
+    var drawnOn = S.traced.some(function (l) { return l.drawn && S.sel.indexOf(l.id) >= 0; });
+    allLines().forEach(function (l) {
+      var on = S.sel.indexOf(l.id) >= 0;
+      if (drawnOn && !on) return;   // con la sagoma disegnata mostro solo quella
+      cx.strokeStyle = l.color; cx.globalAlpha = on ? 1 : 0.75; cx.lineWidth = on ? lw * 2.4 : lw;
+      poly(cx, l.pts, l.closed);
+      cx.globalAlpha = 1;
+      var m = l.pts[Math.floor(l.pts.length / 2)], fs = Math.round(R.W / 40);
+      cx.font = '600 ' + fs + 'px Barlow, Arial'; cx.lineWidth = fs / 5; cx.strokeStyle = '#fff'; cx.fillStyle = l.color;
+      var t = l.stroke ? 'C' : l.drawn ? 'D' : l.traced ? 'T' : String(l.id);
+      cx.strokeText(t, m.x + fs * 0.3, m.y - fs * 0.3); cx.fillText(t, m.x + fs * 0.3, m.y - fs * 0.3);
+    });
+    if (S.ext && S.ext.length) {
+      cx.setLineDash([lw * 2, lw * 2]); cx.strokeStyle = '#ff2d2d'; cx.lineWidth = lw * 1.5;
+      S.ext.forEach(function (p) { poly(cx, p, false); }); cx.setLineDash([]);
+    }
+    if (S.out && S.glass) {
+      cx.setLineDash([lw * 3, lw * 2]); cx.strokeStyle = '#1f6fd6'; cx.lineWidth = lw * 1.2;
+      poly(cx, S.glass.map(function (p) { return Lx.toPx(R, p); }), true); cx.setLineDash([]);
+    }
+    if (S.out) {
+      cx.strokeStyle = '#ff2d2d'; cx.lineWidth = lw * 1.3;
+      poly(cx, (S.shape ? S.out.world : S.out.raw).map(function (p) { return Lx.toPx(R, p); }), true);
+    }
+    if (S.tracing) {
+      cx.fillStyle = '#ff2d2d';
+      S.tracing.forEach(function (p, k) { cx.beginPath(); cx.arc(p.x, p.y, lw * 3, 0, 6.3); cx.fill(); });
+      if (S.tracing.length > 1) {
+        var tl = Lx.traceLine(R, S.tracing, false);
+        if (tl) { cx.strokeStyle = '#ff2d2d'; cx.lineWidth = lw * 1.5; poly(cx, tl.pts, false); }
+      }
+    }
+    cx.strokeStyle = '#3aa0ff'; cx.fillStyle = '#3aa0ff'; cx.lineWidth = lw; cx.font = '600 ' + Math.round(R.W / 28) + 'px Barlow, Arial';
+    var ids = S.sol ? Object.keys(S.sol.centers) : ['1', '2', '3', '4'];
+    S.refs.forEach(function (p, k) {
+      var q = Lx.toPx(R, p), r = R.W / 60;
+      cx.beginPath(); cx.arc(q.x, q.y, r, 0, 6.3); cx.stroke(); cx.fillText(ids[k], q.x + r * 1.3, q.y + r * 0.6);
+    });
+  }
+  function poly(cx, P, closed) {
+    if (!P || P.length < 2) return;
+    cx.beginPath(); P.forEach(function (p, k) { cx[k ? 'lineTo' : 'moveTo'](p.x + 0.5, p.y + 0.5); }); if (closed) cx.closePath(); cx.stroke();
+  }
+  function tile(cls, big, small) { return '<div class="tile ' + cls + '"><b>' + big + '</b><span>' + small + '</span></div>'; }
+  function tiles() {
+    var h = '', R = S.R;
+    if (S.dr) {
+      var lb = S.shape ? bbox(window.Shape.sample(S.shape, 2)) : { w: S.dr.width, h: S.dr.height };
+      h += tile('', nf(lb.w, 1) + ' × ' + nf(lb.h, 1) + ' mm', 'Luce: larghezza × altezza');
+      if (overlap() > 0) {
+        var gb = S.gshape ? bbox(window.Shape.sample(S.gshape, 2)) : { w: lb.w + 2 * overlap(), h: lb.h + 2 * overlap() };
+        h += tile('', nf(gb.w, 1) + ' × ' + nf(gb.h, 1) + ' mm', 'Vetro: luce + ' + nf(overlap(), 0) + ' mm per lato');
+      }
+      if (S.shape) {
+        var nl = S.shape.prims.filter(function (p) { return p.type === 'L'; }).length, na = S.shape.prims.length - nl;
+        var rr = S.shape.prims.filter(function (p) { return p.type === 'A'; }).map(function (p) { return 'R ' + nf(p.r, 0); });
+        h += tile('', nl + (nl === 1 ? ' retta' : ' rette') + (na ? ', ' + na + (na === 1 ? ' arco' : ' archi') : ''), 'Contorno pulito' + (rr.length ? ': ' + rr.slice(0, 3).join(', ') + ' mm' : ''));
+      }
+      h += tile('', nf(C.perimeter(S.out.world), 0) + ' mm', 'Perimetro · tratto letto: ' + nf(S.out.strokeMm, 1) + ' mm');
+    }
+    if (S.sol) {
+      var sp = S.sol.sigmaPx;
+      h += tile(sp <= 0.5 ? 'ok' : 'warn', nf(sp, 2) + ' px', 'Coerenza dei marker' + (sp > 0.5 ? ': foglio non piano o foto mossa' : ''));
+    }
+    h += tile(R.photoRes <= 1.2 ? 'ok' : 'warn', nf(R.photoRes, 2) + ' mm', 'Per pixel della foto' + (R.photoRes > 1.2 ? ': per la matita serve una foto più dettagliata' : ''));
+    if (S.cam && S.cam.Z > 100) h += tile('', nf(S.cam.Z / 1000, 1) + ' m', 'Altezza stimata della fotocamera');
+    $('tiles').innerHTML = h;
+  }
+  $('rect').addEventListener('click', function (e) {
+    var R = S.R; if (!R || S.drawMode) return;
+    var b = e.currentTarget.getBoundingClientRect(), k = R.W / b.width;
+    var p = { x: (e.clientX - b.left) * k, y: (e.clientY - b.top) * k };
+    if (S.tracing) { S.tracing.push(p); drawRect(); return; }
+    var near = null, nd = 14 * k;
+    allLines().forEach(function (l) {
+      for (var i = 0; i < l.pts.length; i += 2) { var d = Math.hypot(l.pts[i].x - p.x, l.pts[i].y - p.y); if (d < nd) { nd = d; near = l; } }
+    });
+    if (near) { toggleLine(near.id); return; }
+    S.tapPx = p; rebuild();
+  });
+  // disegno col dito: si ripassa la sagoma a grandi linee, l'app cerca la linea vera vicino al tratto
+  var HINT0 = 'Tocca una linea per sceglierla o toglierla. Tocca dentro la sagoma se il rosso circonda la zona sbagliata.';
+  function setDraw(on) {
+    S.drawMode = on; $('rect').style.touchAction = on ? 'none' : '';
+    $('draw').textContent = on ? 'Annulla disegno' : 'Disegna col dito';
+    $('rect-hint').textContent = on ? 'Ripassa col dito tutta la sagoma, senza staccare, anche a grandi linee: entro 2–3 cm dalla linea basta. Dove manca un lato, segui il bordo del cartone.' : HINT0;
+  }
+  $('draw').addEventListener('click', function () { if (S.R) { setDraw(!S.drawMode); S.drawing = null; drawRect(); } });
+  function rectPt(e) { var c = $('rect'), b = c.getBoundingClientRect(); return { x: (e.clientX - b.left) * c.width / b.width, y: (e.clientY - b.top) * c.height / b.height }; }
+  $('rect').addEventListener('pointerdown', function (e) {
+    if (!S.drawMode) return;
+    S.drawing = [rectPt(e)]; $('rect').setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  $('rect').addEventListener('pointermove', function (e) {
+    if (!S.drawMode || !S.drawing) return;
+    S.drawing.push(rectPt(e));
+    var cx = $('rect').getContext('2d'), n = S.drawing.length, lw = Math.max(3, S.R.W / 200);
+    cx.strokeStyle = '#18c4b0'; cx.lineWidth = lw; cx.lineCap = 'round'; cx.beginPath();
+    cx.moveTo(S.drawing[n - 2].x, S.drawing[n - 2].y); cx.lineTo(S.drawing[n - 1].x, S.drawing[n - 1].y); cx.stroke();
+  });
+  function endDraw() {
+    if (!S.drawMode || !S.drawing) return;
+    var rough = S.drawing; S.drawing = null; setDraw(false);
+    if (rough.length < 10) { drawRect(); return; }
+    status('st-out', 'Cerco la linea vicino al tuo tratto…');
+    later(function () {
+      var L = Lx.snapPath(S.R, rough, S.card, 30);
+      if (!L) { status('st-out', 'Tratto troppo corto.', 'warn'); drawRect(); return; }
+      L.id = 100 + S.traced.length; L.color = '#ff2d2d'; S.traced.push(L);
+      if (L.closed) S.sel = [L.id]; else { S.sel = S.sel.filter(function (x) { return x !== 50; }); S.sel.push(L.id); }
+      S.tapPx = null; rebuild();
+    });
+  }
+  $('rect').addEventListener('pointerup', endDraw); $('rect').addEventListener('pointercancel', endDraw);
+  $('trace').addEventListener('click', function () {
+    if (!S.R) return;
+    S.tracing = []; $('trace').hidden = true; $('undo').hidden = false; $('done').hidden = false;
+    $('rect-hint').textContent = 'Tocca lungo la linea da seguire, un punto ogni 20–40 cm. Inizia e finisci vicino al bordo del cartone.';
+    drawRect();
+  });
+  $('undo').addEventListener('click', function () { if (S.tracing && S.tracing.length) { S.tracing.pop(); drawRect(); } });
+  $('done').addEventListener('click', function () {
+    var tl = S.tracing && S.tracing.length > 1 ? Lx.traceLine(S.R, S.tracing, false) : null;
+    S.tracing = null; $('trace').hidden = false; $('undo').hidden = true; $('done').hidden = true;
+    $('rect-hint').textContent = 'Tocca una linea per sceglierla o toglierla. Tocca dentro la sagoma se il rosso circonda la zona sbagliata.';
+    if (tl) { tl.id = 100 + S.traced.length; tl.color = '#ff2d2d'; S.traced.push(tl); S.sel = S.sel.filter(function (x) { return x !== 50; }); S.sel.push(tl.id); }
+    S.tapPx = null; rebuild();
+  });
+  $('usecard').addEventListener('change', function () { if (S.R) rebuild(); });
+  try { var ovs = localStorage.getItem('sagome-sormonto'); if (ovs) $('ov').value = ovs; } catch (e) {}
+  try { var rgs = JSON.parse(localStorage.getItem('sagome-pulizia') || 'null'); if (rgs) { $('reg').value = rgs.m; $('tol').value = rgs.t; } } catch (e) {}
+  function regUi() { $('tolv').textContent = nf(tolMm(), 1); $('tolbox').hidden = $('reg').value === 'off'; }
+  regUi();
+  function regChange() { regUi(); try { localStorage.setItem('sagome-pulizia', JSON.stringify({ m: $('reg').value, t: tolMm() })); } catch (e) {} if (S.R) rebuild(); }
+  $('reg').addEventListener('change', regChange); $('tol').addEventListener('change', regChange);
+  $('tol').addEventListener('input', function () { $('tolv').textContent = nf(tolMm(), 1); });
+  $('ov').addEventListener('change', function () { try { localStorage.setItem('sagome-sormonto', $('ov').value); } catch (e) {} if (S.R) rebuild(); });
+  $('th').addEventListener('change', function () { onRuler(); });
+  $('sens').addEventListener('change', function () { if (S.R) { status('st-out', 'Elaboro…'); later(function () { findLines(false); }); } });
+  ['m-in', 'm-mid', 'm-out'].forEach(function (id) {
+    $(id).addEventListener('change', function (e) { S.mode = e.target.value; if (S.R) rebuild(); });
+  });
+
+  // ---------- uscita ----------
+  function overlap() { var v = parseFloat(String($('ov').value).replace(',', '.')); return isFinite(v) && v >= 0 && v < 200 ? v : 15; }
+  function tolMm() { return +$('tol').value; }
+  function dxfText() {
+    var luce = S.shape || S.dr.poly, L = [{ name: 'LUCE', color: 3, polys: [luce] }];
+    if (overlap() > 0) L.push({ name: 'VETRO', color: 1, polys: [S.shape ? S.gshape : C.offsetPoly(S.dr.poly, overlap())] });
+    return C.dxf(L, S.dr.refs);
+  }
+  function bbox(P) { var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; P.forEach(function (p) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }); return { w: x1 - x0, h: y1 - y0 }; }
+  function stamp() { var t = new Date(), p = function (v) { return String(v).padStart(2, '0'); }; return t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) + '-' + p(t.getHours()) + p(t.getMinutes()); }
+  var dlP = (async function () {
+    if (window.OFFLINE) return null;
+    for (var i = 0; i < 60 && !window.claude; i++) await new Promise(function (r) { setTimeout(r, 100); });
+    try { return window.claude ? await window.claude.use('downloads') : null; } catch (e) { return null; }
+  })();
+  $('save').addEventListener('click', async function () {
+    if (!S.dr) return;
+    var name = 'sagoma-' + stamp(), dl = await dlP;
+    if (!dl) { // pagina aperta da file o da un altro sito: download normale del browser
+      try {
+        var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([dxfText()], { type: 'application/dxf' }));
+        a.download = name + '.dxf'; document.body.appendChild(a); a.click(); a.remove();
+        status('st-out', 'Salvato ' + name + '.dxf nei download.', 'ok');
+      } catch (e) { status('st-out', 'Download non riuscito. Usa "Copia il DXF".', 'warn'); }
+      return;
+    }
+    try {
+      await dl.save({ filename: name + '.zip', data: new Blob([C.zipOne(name + '.dxf', dxfText())]) });
+      status('st-out', 'Salvato ' + name + '.zip: dentro c\'è il file .dxf da aprire in AutoCAD.', 'ok');
+    } catch (err) {
+      status('st-out', err && err.code === 'declined' ? 'Salvataggio annullato.' : 'Salvataggio non riuscito. Usa "Copia il DXF".', 'warn');
+    }
+  });
+  $('copy').addEventListener('click', async function () {
+    if (!S.dr) return;
+    try { await navigator.clipboard.writeText(dxfText()); status('st-out', 'DXF copiato: incollalo in un file di testo e salvalo come .dxf.', 'ok'); }
+    catch (e) { status('st-out', 'Copia non riuscita in questa vista.', 'warn'); }
+  });
+
+  loadImage('example.jpg', true);
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
